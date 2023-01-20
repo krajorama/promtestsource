@@ -17,6 +17,27 @@ import (
 
 const defaultPort = "5001"
 
+type MetricType uint8
+
+const (
+	Gauge MetricType = iota
+	Histogram
+	FloatHistogram
+)
+
+func (v MetricType) String() string {
+	switch v {
+	case Gauge:
+		return "gauge"
+	case Histogram:
+		return "histogram"
+	case FloatHistogram:
+		return "floathistogram"
+	default:
+		return "unknown"
+	}
+}
+
 type Config struct {
 	ListenAddress string
 	MetricType    string
@@ -24,10 +45,20 @@ type Config struct {
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ListenAddress, "bind", fmt.Sprintf(":%s", defaultPort), "Bind address")
-	f.StringVar(&cfg.MetricType, "type", "gauge", "The type of metric to generate")
+	f.StringVar(&cfg.MetricType, "type", "gauge", "The type of metric to generate: gauge, histogram, floathistogram")
+}
+
+var metricTypes = map[string]MetricType{
+	"gauge": Gauge,
+	"histogram": Histogram,
+	"floathistogram": FloatHistogram,
 }
 
 func Validate(cfg *Config) error {
+	_, ok := metricTypes[cfg.MetricType]
+	if !ok {
+		return fmt.Errorf("unknown metric type %s", cfg.MetricType)
+	}
 	return nil
 }
 
@@ -45,21 +76,28 @@ func main() {
 
 	address, port := getAddressAndPort(cfg.ListenAddress)
 	listenAddress := fmt.Sprintf("%s:%s", address, port)
+	http.Handle("/metrics", promhttp.Handler())
+	server := &http.Server{Addr: listenAddress, Handler: nil}
+	defer server.Shutdown(context.Background())
 	log.Printf("HTTP server on %s", listenAddress)
+
+	go func() { log.Fatal(server.ListenAndServe()) }()
 
 	labels := map[string]string{
 		"address": address,
 		"port": port,
 	}
-	gauge := setupGauge(labels)
 
-	http.Handle("/metrics", promhttp.Handler())
-	server := &http.Server{Addr: listenAddress, Handler: nil}
-	defer server.Shutdown(context.Background())
+	mt := metricTypes[cfg.MetricType]
+	switch mt {
+	case Gauge:
+		handleGaugeInput(setupGauge(labels))
+	case Histogram:
+		handleHistogramInput(setupHistogram(labels))
+	default:
+		panic(fmt.Sprint("Not implemented for ", mt))
+	}
 
-	go func() { log.Fatal(server.ListenAndServe()) }()
-
-	handleInput(gauge)
 }
 
 // getAddressAndPort always defines a non empty address and port
@@ -93,7 +131,7 @@ func setupGauge(labels map[string]string) prometheus.Gauge {
 	return gauge
 }
 
-func handleInput(gauge prometheus.Gauge) {
+func handleGaugeInput(gauge prometheus.Gauge) {
 	currentValue := 0.0
 	gauge.Set(currentValue)
 	scanner := bufio.NewScanner(os.Stdin)
@@ -108,5 +146,34 @@ func handleInput(gauge prometheus.Gauge) {
 		}
 		currentValue = newValue
 		gauge.Set(currentValue)
+	}
+}
+
+func setupHistogram(labels map[string]string) prometheus.Histogram {
+	histogram := prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "golang",
+			Name: "manual_histogram",
+			Help: "This is a histogram with manually selected parameters",
+			ConstLabels: labels,
+			NativeHistogramBucketFactor: 1.1,
+			NativeHistogramMaxBucketNumber: 100,
+	})
+	prometheus.MustRegister(histogram)
+	return histogram
+}
+
+func handleHistogramInput(histogram prometheus.Histogram) {
+	histogram.Observe(1.41)
+	scanner := bufio.NewScanner(os.Stdin)
+	scan := func() bool {
+		fmt.Printf("Nothing to set for now")
+		return scanner.Scan()
+	}
+	for scan() {
+		_, error := strconv.ParseFloat(scanner.Text(), 64)
+		if error != nil {
+			continue
+		}
 	}
 }
