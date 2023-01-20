@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -14,18 +15,43 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+const defaultPort = "5001"
+
+type Config struct {
+	ListenAddress string
+	MetricType    string
+}
+
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&cfg.ListenAddress, "bind", fmt.Sprintf(":%s", defaultPort), "Bind address")
+	f.StringVar(&cfg.MetricType, "type", "gauge", "The type of metric to generate")
+}
+
+func Validate(cfg *Config) error {
+	return nil
+}
+
 func main() {
-	listenAddress := ":5001"
-	if len(os.Args) > 1 {
-		listenAddress = os.Args[1]
-	} else {
-		log.Println("You can specify different listen address on the command line, e.g. go run promtestsource.go :5002")
+	// Parse CLI flags.
+	cfg := &Config{}
+	cfg.RegisterFlags(flag.CommandLine)
+	flag.Parse()
+
+	err := Validate(cfg)
+	if err!=nil {
+		fmt.Println(err)
+		return
 	}
-	address, port := getAddressAndPort(listenAddress)
-	listenAddress = fmt.Sprintf("%s:%s", address, port)
+
+	address, port := getAddressAndPort(cfg.ListenAddress)
+	listenAddress := fmt.Sprintf("%s:%s", address, port)
 	log.Printf("HTTP server on %s", listenAddress)
 
-	gauge := setupGauge(address, port)
+	labels := map[string]string{
+		"address": address,
+		"port": port,
+	}
+	gauge := setupGauge(labels)
 
 	http.Handle("/metrics", promhttp.Handler())
 	server := &http.Server{Addr: listenAddress, Handler: nil}
@@ -49,22 +75,19 @@ func getAddressAndPort(listenAddress string) (string, string) {
 		address = "0.0.0.0"
 	}
 	if port == "" {
-		port = "80"
+		port = defaultPort
 	}
 
 	return address, port
 }
 
-func setupGauge(address, port string) prometheus.Gauge {
+func setupGauge(labels map[string]string) prometheus.Gauge {
 	gauge := prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: "golang",
 			Name:      "manual_gauge",
 			Help:      "This is my manual gauge",
-			ConstLabels: map[string]string{
-				"address": address,
-				"port":    port,
-			},
+			ConstLabels: labels,
 		})
 	prometheus.MustRegister(gauge)
 	return gauge
