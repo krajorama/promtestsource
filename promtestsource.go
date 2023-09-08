@@ -158,6 +158,7 @@ func setupHistogram(labels map[string]string) prometheus.Histogram {
 			ConstLabels: labels,
 			NativeHistogramBucketFactor: 1.1,
 			NativeHistogramMaxBucketNumber: 100,
+			Buckets: []float64{1,10,100,1000},
 	})
 	prometheus.MustRegister(histogram)
 	return histogram
