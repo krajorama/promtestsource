@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	// "time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -156,23 +157,24 @@ func setupHistogram(labels map[string]string) prometheus.Histogram {
 			Name: "manual_histogram",
 			Help: "This is a histogram with manually selected parameters",
 			ConstLabels: labels,
-			NativeHistogramBucketFactor: 1.1,
-			NativeHistogramMaxBucketNumber: 100,
-			Buckets: []float64{1,10,100,1000},
+			// NativeHistogramBucketFactor: 1.1,
+			// NativeHistogramMaxBucketNumber: 100,
+			// NativeHistogramMinResetDuration: 1*time.Hour,
+			// Buckets: []float64{1,10,100,1000},
 	})
 	prometheus.MustRegister(histogram)
 	return histogram
 }
 
 func handleHistogramInput(histogram prometheus.Histogram) {
-	histogram.Observe(1.41)
 	scanner := bufio.NewScanner(os.Stdin)
 	scan := func() bool {
-		fmt.Printf("Nothing to set for now")
+		fmt.Printf("Make an observation:")
 		return scanner.Scan()
 	}
 	for scan() {
-		_, error := strconv.ParseFloat(scanner.Text(), 64)
+		newValue, error := strconv.ParseFloat(scanner.Text(), 64)
+		histogram.Observe(newValue)
 		if error != nil {
 			continue
 		}
