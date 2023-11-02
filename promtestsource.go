@@ -10,7 +10,8 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	// "time"
+	"strings"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -137,15 +138,25 @@ func handleGaugeInput(gauge prometheus.Gauge) {
 	gauge.Set(currentValue)
 	scanner := bufio.NewScanner(os.Stdin)
 	scan := func() bool {
-		fmt.Printf("Set metric (current: %v): ", currentValue)
+		fmt.Printf("Set metric to x or add with +x (current: %v): ", currentValue)
 		return scanner.Scan()
 	}
 	for scan() {
-		newValue, error := strconv.ParseFloat(scanner.Text(), 64)
+		textToParse := scanner.Text()
+		isAdd := false
+		if strings.HasPrefix(textToParse, "+") {
+			isAdd = true
+			textToParse = strings.TrimPrefix(textToParse, "+")
+		}
+		newValue, error := strconv.ParseFloat(textToParse, 64)
 		if error != nil {
 			continue
 		}
-		currentValue = newValue
+		if isAdd {
+			currentValue += newValue
+		} else {
+			currentValue = newValue
+		}
 		gauge.Set(currentValue)
 	}
 }
@@ -154,12 +165,12 @@ func setupHistogram(labels map[string]string) prometheus.Histogram {
 	histogram := prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Namespace: "golang",
-			Name: "manual_histogram",
+			Name: "manual_histogram_count",
 			Help: "This is a histogram with manually selected parameters",
 			ConstLabels: labels,
-			// NativeHistogramBucketFactor: 1.1,
-			// NativeHistogramMaxBucketNumber: 100,
-			// NativeHistogramMinResetDuration: 1*time.Hour,
+			NativeHistogramBucketFactor: 1.1,
+			NativeHistogramMaxBucketNumber: 100,
+			NativeHistogramMinResetDuration: 1*time.Hour,
 			// Buckets: []float64{1,10,100,1000},
 	})
 	prometheus.MustRegister(histogram)
