@@ -78,7 +78,7 @@ func main() {
 
 	address, port := getAddressAndPort(cfg.ListenAddress)
 	listenAddress := fmt.Sprintf("%s:%s", address, port)
-	http.Handle("/metrics", promhttp.Handler())
+	http.Handle("/metrics", promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{EnableOpenMetrics: true}))
 	server := &http.Server{Addr: listenAddress, Handler: nil}
 	defer server.Shutdown(context.Background())
 	log.Printf("HTTP server on %s", listenAddress)
@@ -88,6 +88,7 @@ func main() {
 	labels := map[string]string{
 		"address": address,
 		"port": port,
+		"generation": "13",
 	}
 
 	mt := metricTypes[cfg.MetricType]
@@ -165,15 +166,18 @@ func setupHistogram(labels map[string]string) prometheus.Histogram {
 	histogram := prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Namespace: "golang",
-			Name: "manual_histogram_count",
+			Name: "manual_histogram",
 			Help: "This is a histogram with manually selected parameters",
 			ConstLabels: labels,
 			NativeHistogramBucketFactor: 1.1,
 			NativeHistogramMaxBucketNumber: 100,
 			NativeHistogramMinResetDuration: 1*time.Hour,
-			// Buckets: []float64{1,10,100,1000},
+			Buckets: prometheus.DefBuckets,
 	})
 	prometheus.MustRegister(histogram)
+	histogram.(prometheus.ExemplarObserver).ObserveWithExemplar(1.0, prometheus.Labels{"foo": "bar1"})
+	// time.Sleep(1*time.Second)
+	// histogram.(prometheus.ExemplarObserver).ObserveWithExemplar(4.0, prometheus.Labels{"foo": "bar2"})
 	return histogram
 }
 
@@ -185,7 +189,8 @@ func handleHistogramInput(histogram prometheus.Histogram) {
 	}
 	for scan() {
 		newValue, error := strconv.ParseFloat(scanner.Text(), 64)
-		histogram.Observe(newValue)
+		//histogram.Observe(newValue)
+		histogram.(prometheus.ExemplarObserver).ObserveWithExemplar(newValue, prometheus.Labels{"foo": "bar3"})
 		if error != nil {
 			continue
 		}
