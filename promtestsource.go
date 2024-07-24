@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
+	//"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -88,19 +88,34 @@ func main() {
 	labels := map[string]string{
 		"address": address,
 		"port": port,
-		"generation": "13",
+		"generation": "20",
 	}
 
-	mt := metricTypes[cfg.MetricType]
-	switch mt {
-	case Gauge:
-		handleGaugeInput(setupGauge(labels))
-	case Histogram:
-		handleHistogramInput(setupHistogram(labels))
-	default:
-		panic(fmt.Sprint("Not implemented for ", mt))
+	// mt := metricTypes[cfg.MetricType]
+	// switch mt {
+	// case Gauge:
+	// 	handleGaugeInput(setupGauge(labels))
+	// case Histogram:
+	// 	handleHistogramInput(setupHistogram(labels))
+	// default:
+	// 	panic(fmt.Sprint("Not implemented for ", mt))
+	// }
+
+	// Start count from 100000
+	h := setupHistogram(labels)
+	for i := 0; i < 100000; i++ {
+		h.Observe(1.0)
 	}
 
+	// 10 times per second
+	tick := time.NewTicker(100*time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-tick.C:
+			h.Observe(1.0)
+		}
+	}
 }
 
 // getAddressAndPort always defines a non empty address and port
@@ -122,45 +137,45 @@ func getAddressAndPort(listenAddress string) (string, string) {
 	return address, port
 }
 
-func setupGauge(labels map[string]string) prometheus.Gauge {
-	gauge := prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Namespace: "golang",
-			Name:      "manual_gauge",
-			Help:      "This is my manual gauge",
-			ConstLabels: labels,
-		})
-	prometheus.MustRegister(gauge)
-	return gauge
-}
+// func setupGauge(labels map[string]string) prometheus.Gauge {
+// 	gauge := prometheus.NewGauge(
+// 		prometheus.GaugeOpts{
+// 			Namespace: "golang",
+// 			Name:      "manual_gauge",
+// 			Help:      "This is my manual gauge",
+// 			ConstLabels: labels,
+// 		})
+// 	prometheus.MustRegister(gauge)
+// 	return gauge
+// }
 
-func handleGaugeInput(gauge prometheus.Gauge) {
-	currentValue := 0.0
-	gauge.Set(currentValue)
-	scanner := bufio.NewScanner(os.Stdin)
-	scan := func() bool {
-		fmt.Printf("Set metric to x or add with +x (current: %v): ", currentValue)
-		return scanner.Scan()
-	}
-	for scan() {
-		textToParse := scanner.Text()
-		isAdd := false
-		if strings.HasPrefix(textToParse, "+") {
-			isAdd = true
-			textToParse = strings.TrimPrefix(textToParse, "+")
-		}
-		newValue, error := strconv.ParseFloat(textToParse, 64)
-		if error != nil {
-			continue
-		}
-		if isAdd {
-			currentValue += newValue
-		} else {
-			currentValue = newValue
-		}
-		gauge.Set(currentValue)
-	}
-}
+// func handleGaugeInput(gauge prometheus.Gauge) {
+// 	currentValue := 0.0
+// 	gauge.Set(currentValue)
+// 	scanner := bufio.NewScanner(os.Stdin)
+// 	scan := func() bool {
+// 		fmt.Printf("Set metric to x or add with +x (current: %v): ", currentValue)
+// 		return scanner.Scan()
+// 	}
+// 	for scan() {
+// 		textToParse := scanner.Text()
+// 		isAdd := false
+// 		if strings.HasPrefix(textToParse, "+") {
+// 			isAdd = true
+// 			textToParse = strings.TrimPrefix(textToParse, "+")
+// 		}
+// 		newValue, error := strconv.ParseFloat(textToParse, 64)
+// 		if error != nil {
+// 			continue
+// 		}
+// 		if isAdd {
+// 			currentValue += newValue
+// 		} else {
+// 			currentValue = newValue
+// 		}
+// 		gauge.Set(currentValue)
+// 	}
+// }
 
 func setupHistogram(labels map[string]string) prometheus.Histogram {
 	histogram := prometheus.NewHistogram(
@@ -175,7 +190,7 @@ func setupHistogram(labels map[string]string) prometheus.Histogram {
 			Buckets: prometheus.DefBuckets,
 	})
 	prometheus.MustRegister(histogram)
-	histogram.(prometheus.ExemplarObserver).ObserveWithExemplar(1.0, prometheus.Labels{"foo": "bar1"})
+	//histogram.(prometheus.ExemplarObserver).ObserveWithExemplar(1.0, prometheus.Labels{"foo": "bar1"})
 	// time.Sleep(1*time.Second)
 	// histogram.(prometheus.ExemplarObserver).ObserveWithExemplar(4.0, prometheus.Labels{"foo": "bar2"})
 	return histogram
