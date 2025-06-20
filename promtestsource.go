@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"flag"
 	"fmt"
 	"log"
@@ -24,7 +26,14 @@ type MetricType uint8
 const (
 	Gauge MetricType = iota
 	Histogram
-	FloatHistogram
+)
+
+type HistogramType uint8
+
+const (
+	ClassicHistogram = iota
+	NativeHistogramStandardBuckets
+	NativeHistogramCustomBuckets
 )
 
 func (v MetricType) String() string {
@@ -33,8 +42,6 @@ func (v MetricType) String() string {
 		return "gauge"
 	case Histogram:
 		return "histogram"
-	case FloatHistogram:
-		return "floathistogram"
 	default:
 		return "unknown"
 	}
@@ -43,23 +50,42 @@ func (v MetricType) String() string {
 type Config struct {
 	ListenAddress string
 	MetricType    string
+	HistogramType string
+	Username      string
+	Password      string
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ListenAddress, "bind", fmt.Sprintf(":%s", defaultPort), "Bind address")
-	f.StringVar(&cfg.MetricType, "type", "gauge", "The type of metric to generate: gauge, histogram, floathistogram")
+	f.StringVar(&cfg.MetricType, "type", "gauge", "The type of metric to generate: gauge, histogram")
+	f.StringVar(&cfg.HistogramType, "histogram-type", "classic", "Type of histogram, comma separated: classic, native")
+	f.StringVar(&cfg.Username, "username", "", "Basic auth username")
+	f.StringVar(&cfg.Password, "password", "", "Basic auth password")
 }
 
 var metricTypes = map[string]MetricType{
 	"gauge": Gauge,
 	"histogram": Histogram,
-	"floathistogram": FloatHistogram,
+}
+
+var histogramTypes = map[string]HistogramType {
+	"classic": ClassicHistogram,
+	"native": NativeHistogramStandardBuckets,
 }
 
 func Validate(cfg *Config) error {
-	_, ok := metricTypes[cfg.MetricType]
-	if !ok {
+	if _, ok := metricTypes[cfg.MetricType]; !ok {
 		return fmt.Errorf("unknown metric type %s", cfg.MetricType)
+	}
+
+	hTypes := strings.Split(cfg.HistogramType, ",")
+	if len(hTypes) == 0 {
+		return fmt.Errorf("histogram type needs to be specified")
+	}
+	for _, t := range hTypes {
+		if _, ok := histogramTypes[t]; !ok {
+			return fmt.Errorf("unknown histogram type %s", t)
+		}
 	}
 	return nil
 }
@@ -78,7 +104,17 @@ func main() {
 
 	address, port := getAddressAndPort(cfg.ListenAddress)
 	listenAddress := fmt.Sprintf("%s:%s", address, port)
-	http.Handle("/metrics", promhttp.Handler())
+	handler := promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{EnableOpenMetrics: true})
+
+	if len(cfg.Username) > 0 && len(cfg.Password) > 0 {
+		app := application{
+			username: cfg.Username,
+			password: cfg.Password,
+		}
+		handler = app.basicAuth(handler.ServeHTTP)
+	}
+
+	http.Handle("/metrics", handler)
 	server := &http.Server{Addr: listenAddress, Handler: nil}
 	defer server.Shutdown(context.Background())
 	log.Printf("HTTP server on %s", listenAddress)
@@ -95,11 +131,16 @@ func main() {
 	case Gauge:
 		handleGaugeInput(setupGauge(labels))
 	case Histogram:
-		handleHistogramInput(setupHistogram(labels))
+		handleHistogramInput(setupHistogram(labels, cfg))
 	default:
 		panic(fmt.Sprint("Not implemented for ", mt))
 	}
 
+}
+
+type application struct {
+	username string
+	password string
 }
 
 // getAddressAndPort always defines a non empty address and port
@@ -161,18 +202,27 @@ func handleGaugeInput(gauge prometheus.Gauge) {
 	}
 }
 
-func setupHistogram(labels map[string]string) prometheus.Histogram {
-	histogram := prometheus.NewHistogram(
-		prometheus.HistogramOpts{
+func setupHistogram(labels map[string]string, cfg *Config) prometheus.Histogram {
+	opts := prometheus.HistogramOpts{
 			Namespace: "golang",
-			Name: "manual_histogram_count",
+			Name: "manual_histogram",
 			Help: "This is a histogram with manually selected parameters",
 			ConstLabels: labels,
-			NativeHistogramBucketFactor: 1.1,
-			NativeHistogramMaxBucketNumber: 100,
-			NativeHistogramMinResetDuration: 1*time.Hour,
-			// Buckets: []float64{1,10,100,1000},
-	})
+	}
+	htTypes  := strings.Split(cfg.HistogramType, ",")
+	for _, t := range htTypes {
+		hType := histogramTypes[t]
+		switch hType {
+		case ClassicHistogram:
+			opts.Buckets = prometheus.DefBuckets
+		case NativeHistogramStandardBuckets:
+			opts.NativeHistogramBucketFactor = 1.1
+			opts.NativeHistogramMaxBucketNumber = 100
+			opts.NativeHistogramMinResetDuration = 1*time.Hour
+		}
+	}
+
+	histogram := prometheus.NewHistogram(opts)
 	prometheus.MustRegister(histogram)
 	return histogram
 }
@@ -185,9 +235,33 @@ func handleHistogramInput(histogram prometheus.Histogram) {
 	}
 	for scan() {
 		newValue, error := strconv.ParseFloat(scanner.Text(), 64)
-		histogram.Observe(newValue)
 		if error != nil {
 			continue
 		}
+		fmt.Printf("Observed %v\n", newValue)
+		histogram.Observe(newValue)
 	}
+}
+
+func (app *application) basicAuth(next http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if ok {
+			usernameHash := sha256.Sum256([]byte(username))
+			passwordHash := sha256.Sum256([]byte(password))
+			expectedUsernameHash := sha256.Sum256([]byte(app.username))
+			expectedPasswordHash := sha256.Sum256([]byte(app.password))
+
+			usernameMatch := (subtle.ConstantTimeCompare(usernameHash[:], expectedUsernameHash[:]) == 1)
+			passwordMatch := (subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:]) == 1)
+
+			if usernameMatch && passwordMatch {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	})
 }
