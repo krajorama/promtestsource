@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run tests
-        run: echo "Running tests for environment: ${{ env.tags }}"
+        run: echo "Running tests for environment: $tags"
         env:
           tags: |-
             1.2.3
