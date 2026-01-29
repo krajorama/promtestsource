@@ -18,7 +18,7 @@ jobs:
 
       - name: Run tests
         run: echo "Running tests for environment: ${{ inputs.tags }}"
-        inputs:
+        with:
           tags: |-
             1.2.3
             ${{ github.ref_type == 'tag' && 'latest' || 'main' }}
