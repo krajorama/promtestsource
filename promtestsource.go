@@ -26,6 +26,7 @@ type MetricType uint8
 const (
 	Gauge MetricType = iota
 	Histogram
+	Counter
 )
 
 type HistogramType uint8
@@ -38,6 +39,8 @@ const (
 
 func (v MetricType) String() string {
 	switch v {
+	case Counter:
+		return "counter"
 	case Gauge:
 		return "gauge"
 	case Histogram:
@@ -57,13 +60,14 @@ type Config struct {
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ListenAddress, "bind", fmt.Sprintf(":%s", defaultPort), "Bind address")
-	f.StringVar(&cfg.MetricType, "type", "gauge", "The type of metric to generate: gauge, histogram")
+	f.StringVar(&cfg.MetricType, "type", "gauge", "The type of metric to generate: counter, gauge, histogram")
 	f.StringVar(&cfg.HistogramType, "histogram-type", "classic", "Type of histogram, comma separated: classic, native")
 	f.StringVar(&cfg.Username, "username", "", "Basic auth username")
 	f.StringVar(&cfg.Password, "password", "", "Basic auth password")
 }
 
 var metricTypes = map[string]MetricType{
+	"counter": Counter,
 	"gauge": Gauge,
 	"histogram": Histogram,
 }
@@ -128,6 +132,8 @@ func main() {
 
 	mt := metricTypes[cfg.MetricType]
 	switch mt {
+	case Counter:
+		handleCounterInput(setupCounter(labels))
 	case Gauge:
 		handleGaugeInput(setupGauge(labels))
 	case Histogram:
@@ -160,6 +166,28 @@ func getAddressAndPort(listenAddress string) (string, string) {
 	}
 
 	return address, port
+}
+
+func setupCounter(labels map[string]string) prometheus.Counter {
+	counter := prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "golang",
+			Name: "manual_counter_total",
+			Help: "This is a manual counter",
+			ConstLabels: labels,
+		},
+	)
+	prometheus.MustRegister(counter)
+	return counter
+}
+
+func handleCounterInput(counter prometheus.Counter) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	fmt.Printf("Counter will be incremented every second.\n")
+	for range ticker.C {
+		counter.Inc()
+	}
 }
 
 func setupGauge(labels map[string]string) prometheus.Gauge {
@@ -204,8 +232,8 @@ func handleGaugeInput(gauge prometheus.Gauge) {
 
 func setupHistogram(labels map[string]string, cfg *Config) prometheus.Histogram {
 	opts := prometheus.HistogramOpts{
-			Namespace: "golang",
-			Name: "manual_histogram",
+			Namespace: "http",
+			Name: "request_seconds",
 			Help: "This is a histogram with manually selected parameters",
 			ConstLabels: labels,
 	}
@@ -223,6 +251,15 @@ func setupHistogram(labels map[string]string, cfg *Config) prometheus.Histogram 
 	}
 
 	histogram := prometheus.NewHistogram(opts)
+
+	// for i := 0;i<20;i++ {
+	// 	if i<10 {
+	// 		histogram.Observe(0)
+	// 	} else {
+	// 		histogram.Observe(2)
+	// 	}
+	// }
+
 	prometheus.MustRegister(histogram)
 	return histogram
 }
