@@ -11,4 +11,4 @@ jobs:
         env:
           tags: |-
             1.2.3
-            ${{ github.ref_type == 'tag' && 'latest' || 'main' }}
+            ${{ github.ref_type != 'tag' && 'latest' || 'main' }}
