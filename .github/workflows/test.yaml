@@ -10,8 +10,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run tests
-        run: echo 'Running tests for environment: $tags'
+      - run: echo 'Running tests for environment: $tags'
         env:
           tags: foo
           # tags: |-
