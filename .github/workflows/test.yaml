@@ -9,7 +9,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - run: echo 'Running tests for environment: ${{ env.tags }}'
+      - run: echo "Running tests for environment: ${{ env.tags }}"
         env:
           tags: foo
           # tags: |-
