@@ -1,0 +1,24 @@
+name: Test Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run tests against'
+        required: false
+        default: 'development'
+        type: string
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run tests
+        run: echo "Running tests for environment: ${{ inputs.tags }}"
+        inputs:
+          tags: |-
+            1.2.3
+            ${{ github.ref_type == 'tag' && 'latest' || 'main' }}
