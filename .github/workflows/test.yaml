@@ -7,11 +7,4 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
       - run: echo "Running tests for environment: ${{ env.tags }}"
-        env:
-          tags: foo
-          # tags: |-
-          #   1.2.3
-          #   ${{ github.ref_type == 'tag' && 'latest' || 'main' }}
