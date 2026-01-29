@@ -17,8 +17,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run tests
-        run: echo "Running tests for environment: $TAGS"
-        with:
+        run: echo "Running tests for environment: ${{ env.tags }}"
+        env:
           tags: |-
             1.2.3
             ${{ github.ref_type == 'tag' && 'latest' || 'main' }}
