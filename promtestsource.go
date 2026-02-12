@@ -108,7 +108,10 @@ func main() {
 
 	address, port := getAddressAndPort(cfg.ListenAddress)
 	listenAddress := fmt.Sprintf("%s:%s", address, port)
-	handler := promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{EnableOpenMetrics: true})
+	handler := promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
+		EnableOpenMetrics:                   true,
+		EnableOpenMetricsTextCreatedSamples: true,
+	})
 
 	if len(cfg.Username) > 0 && len(cfg.Password) > 0 {
 		app := application{
